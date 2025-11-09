@@ -147,13 +147,30 @@ def generate_vapi_from_xml(protocol_file, output_vapi_file, cheader_filename):
                         event_name_snake = event.get("name")
                         event_name_vala = snake_to_pascal(
                             event_name_snake
-                        )  # Delegate name PascalCase
+                        )
+                        params = []
+                        for arg in event.findall("arg"):
+                            arg_name = arg.get("name")
+                            arg_type = arg.get("type")
+                            arg_interface = arg.get("interface")
+                            arg_enum = arg.get("enum")
+
+                            vala_type = map_vala_type(
+                                arg_type,
+                                interface_name_snake,
+                                interface_attr=arg_interface,
+                                enum_attr=arg_enum,
+                            )
+                            params.append(f"{vala_type} {arg_name}")
+
+                        params_str = ", ".join(params)
+
                         f_vapi.write(
                             "[CCode (has_target = false, has_typedef = false)]\n"
                         )
                         f_vapi.write(
-                            f"public delegate void {interface_name_vala}Listener{event_name_vala}(void *data, {interface_name_vala} {interface_name_snake});\n\n"
-                        )  # Delegate argument camelCase
+                            f"public delegate void {interface_name_vala}Listener{event_name_vala}(void *data, {interface_name_vala} {interface_name_snake}{', ' + params_str if params_str else ''});\n\n"
+                        )
                 for enum in interface.findall("enum"):
                     enum_name_snake = enum.get("name")
                     enum_name_vala = snake_to_pascal(enum_name_snake)
