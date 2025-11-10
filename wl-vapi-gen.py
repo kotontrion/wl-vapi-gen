@@ -59,7 +59,7 @@ def generate_vapi_from_xml(protocol_file, output_vapi_file, cheader_filename):
                 interface_name_vala = map_vala_type(
                     interface_name_snake, interface_name_snake
                 )
-                free_function = None
+                free_function = f"{interface_name_snake}_destroy"
 
                 for request in interface.findall("request"):
                     if (
