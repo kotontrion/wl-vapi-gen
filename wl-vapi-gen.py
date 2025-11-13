@@ -46,6 +46,31 @@ def snake_to_screaming_snake(name):
     return name.upper()
 
 
+def generate_docs(node, f_vapi, indent=False):
+    description_tag = node.find("description")
+
+    if (
+        description_tag is not None
+        and description_tag.text
+        and description_tag.text.strip()
+    ):
+        content = description_tag.text.strip()
+        lines = [line.strip() for line in content.splitlines()]
+    elif node.get("summary") is not None:
+        content = node.get("summary").strip()
+        content = " ".join(content.split())
+        lines = [content]
+    else:
+        lines = []
+
+    if lines:
+        indent_str = "  " if indent else ""
+        f_vapi.write(f"{indent_str}/**\n")
+        for line in lines:
+            f_vapi.write(f"{indent_str} * {line}\n")
+        f_vapi.write(f"{indent_str} */\n")
+
+
 def generate_vapi_from_xml(protocol_file, output_vapi_file, cheader_filename):
     try:
         tree = ET.parse(protocol_file)
@@ -69,6 +94,7 @@ def generate_vapi_from_xml(protocol_file, output_vapi_file, cheader_filename):
                         free_function = f"{interface_name_snake}_{request.get('name')}"
                         break
 
+                generate_docs(interface, f_vapi)
                 annotation = f'[CCode (cheader_filename="{cheader_filename}", cname="struct {interface_name_snake}", cprefix="{interface_name_snake}_", free_function="{free_function}")]'
 
                 f_vapi.write(
@@ -89,6 +115,8 @@ def generate_vapi_from_xml(protocol_file, output_vapi_file, cheader_filename):
                     request_name_vala = request_name_snake
                     params = []
                     return_type = "void"
+
+                    generate_docs(request, f_vapi, True)
 
                     for arg in request.findall("arg"):
                         arg_name = arg.get("name")
@@ -112,6 +140,7 @@ def generate_vapi_from_xml(protocol_file, output_vapi_file, cheader_filename):
                             params.append(f"{vala_type} {arg_name}")
 
                     params_str = ", ".join(params)
+
                     if (
                         request.get("destroyer") == "true"
                         or request.get("name") == "destroy"
@@ -145,9 +174,10 @@ def generate_vapi_from_xml(protocol_file, output_vapi_file, cheader_filename):
 
                     for event in events:
                         event_name_snake = event.get("name")
-                        event_name_vala = snake_to_pascal(
-                            event_name_snake
-                        )
+                        event_name_vala = snake_to_pascal(event_name_snake)
+
+                        generate_docs(event, f_vapi)
+
                         params = []
                         for arg in event.findall("arg"):
                             arg_name = arg.get("name")
@@ -174,6 +204,9 @@ def generate_vapi_from_xml(protocol_file, output_vapi_file, cheader_filename):
                 for enum in interface.findall("enum"):
                     enum_name_snake = enum.get("name")
                     enum_name_vala = snake_to_pascal(enum_name_snake)
+
+                    generate_docs(enum, f_vapi, True)
+
                     f_vapi.write(
                         f'[CCode (cprefix="{snake_to_screaming_snake(interface_name_snake)}_{snake_to_screaming_snake(enum_name_snake)}_", cname="enum {interface_name_snake}_{enum_name_snake}", cheader_filename="{cheader_filename}")]\n'
                     )
@@ -185,6 +218,7 @@ def generate_vapi_from_xml(protocol_file, output_vapi_file, cheader_filename):
                     for entry in enum.findall("entry"):
                         enum_value = entry.get("name")
                         enum_value_vala = snake_to_screaming_snake(enum_value)
+                        generate_docs(entry, f_vapi, True)
                         f_vapi.write(f"  {enum_value_vala},\n")
                     f_vapi.write("}\n\n")
                     f_vapi.flush()
