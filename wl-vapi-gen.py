@@ -67,7 +67,7 @@ def generate_docs(node, f_vapi, indent=False):
         f_vapi.write(f"{indent_str} */\n")
 
 
-def generate_parameters(args, interface_name):
+def generate_parameters(args, interface_name, return_new_id = True):
     params = []
     return_type = "void"
     for arg in args:
@@ -76,17 +76,12 @@ def generate_parameters(args, interface_name):
         arg_interface = arg.get("interface")
         arg_enum = arg.get("enum")
 
-        if arg_type == "new_id":
-            return_type = map_vala_type(
-                arg_type, interface_name, interface_attr=arg_interface
-            )
+        vala_type = map_vala_type(
+            arg_type, interface_name, interface_attr=arg_interface
+        )
+        if arg_type == "new_id" and return_new_id:
+            return_type = vala_type
         else:
-            vala_type = map_vala_type(
-                arg_type,
-                interface_name,
-                interface_attr=arg_interface,
-                enum_attr=arg_enum,
-            )
             params.append(f"{vala_type} {arg_name}")
 
     return return_type, ", ".join(params)
@@ -196,7 +191,7 @@ def generate_events(f_vapi, interface_name_snake, interface_name_vala, events):
         event_name_vala = snake_to_pascal(event.get("name"))
         generate_docs(event, f_vapi)
         return_type, params_str = generate_parameters(
-            event.findall("arg"), interface_name_snake
+            event.findall("arg"), interface_name_snake, False
         )
         f_vapi.write("[CCode (has_target=false, has_typedef=false)]\n")
         f_vapi.write(
