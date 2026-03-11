@@ -34,8 +34,8 @@ def map_vala_type(type_name, interface, interface_attr=None, enum_attr=None):
             return f"Wl.{snake_to_pascal(interface_attr[3:])}"
         return map_vala_type(interface_attr, interface)
 
-    if type_name == "new_id" and interface_attr:
-        return map_vala_type(interface_attr, interface)
+    if type_name == "new_id":
+        return map_vala_type(interface_attr, interface) if interface_attr != None else "void*"
 
     if enum_attr and type_name in ("int", "uint"):
         if "." in enum_attr:
@@ -67,7 +67,24 @@ def generate_docs(node, f_vapi, indent=False):
         f_vapi.write(f"{indent_str} */\n")
 
 
-def generate_parameters(args, interface_name, return_new_id = True):
+def generate_version(node, f_vapi, indent=False):
+    since = node.get("since")
+    deprecated_since = node.get("deprecated-since")
+    attrs = {}
+    if since:
+        attrs["since"] = since
+    if deprecated_since:
+        attrs["deprecated"] = "true"
+        attrs["deprecated_since"] = deprecated_since
+    if not attrs:
+        return
+    
+    attr_str = ", ".join(f'{k}="{v}"' for k, v in attrs.items())
+    indent_str = "  " if indent else ""
+    f_vapi.write(f'{indent_str}[Version ({attr_str})]\n')
+
+
+def generate_parameters(args, interface_name, return_new_id=True):
     params = []
     return_type = "void"
     for arg in args:
@@ -77,7 +94,7 @@ def generate_parameters(args, interface_name, return_new_id = True):
         arg_enum = arg.get("enum")
 
         vala_type = map_vala_type(
-            arg_type, interface_name, interface_attr=arg_interface
+            arg_type, interface_name, interface_attr=arg_interface, enum_attr=arg_enum
         )
         if arg_type == "new_id" and return_new_id:
             return_type = vala_type
@@ -86,6 +103,73 @@ def generate_parameters(args, interface_name, return_new_id = True):
 
     return return_type, ", ".join(params)
 
+
+def generate_requests(f_vapi, interface_name_snake, interface_name_vala, requests):
+    for request in requests:
+        request_name_snake = request.get("name")
+        generate_docs(request, f_vapi, True)
+        generate_version(request, f_vapi, True)
+
+        return_type, params_str = generate_parameters(
+            request.findall("arg"), interface_name_snake
+        )
+
+        if request.get("type") == "destructor" or request.get("destroyer") == "true" or request_name_snake == "destroy":
+            f_vapi.write("  [DestroysInstance]\n")
+
+        f_vapi.write(f"  public {return_type} {request_name_snake}({params_str});\n")
+
+
+def generate_events(f_vapi, interface_name_snake, interface_name_vala, events):
+    f_vapi.write(
+        f'[CCode (cname="struct {interface_name_snake}_listener", has_type_id=false)]\n'
+    )
+    f_vapi.write(f"public struct {interface_name_vala}Listener {{\n")
+    for event in events:
+        name_snake = event.get("name")
+        f_vapi.write(
+            f"  public {interface_name_vala}Listener{snake_to_pascal(name_snake)} {snake_to_camel(name_snake)};\n"
+        )
+    f_vapi.write("}\n\n")
+
+    for event in events:
+        event_name_vala = snake_to_pascal(event.get("name"))
+        generate_docs(event, f_vapi)
+        generate_version(event, f_vapi)
+        return_type, params_str = generate_parameters(
+            event.findall("arg"), interface_name_snake, False
+        )
+        f_vapi.write("[CCode (has_target=false, has_typedef=false)]\n")
+        f_vapi.write(
+            f"public delegate void {interface_name_vala}Listener{event_name_vala}(void *data, {interface_name_vala} {interface_name_snake}"
+            f"{', ' + params_str if params_str else ''});\n\n"
+        )
+
+
+def generate_enum(
+    f_vapi, enum, interface_name_snake, interface_name_vala, cheader_filename
+):
+    enum_name_snake = enum.get("name")
+    enum_name_vala = snake_to_pascal(enum_name_snake)
+    generate_docs(enum, f_vapi, False)
+    generate_version(enum, f_vapi, False)
+    
+    f_vapi.write(
+        f'[CCode (cprefix="{snake_to_screaming_snake(interface_name_snake)}_{snake_to_screaming_snake(enum_name_snake)}_", '
+        f'cname="enum {interface_name_snake}_{enum_name_snake}", cheader_filename="{cheader_filename}")]'
+        "\n"
+    )
+    if enum.get("bitfield") == "true":
+        f_vapi.write("[Flags]\n")
+
+    f_vapi.write(f"public enum {interface_name_vala}{enum_name_vala} {{\n")
+    for entry in enum.findall("entry"):
+        enum_value_vala = snake_to_screaming_snake(entry.get("name"))
+        generate_docs(entry, f_vapi, True)
+        generate_version(entry, f_vapi, True)
+        f_vapi.write(f"  {enum_value_vala},\n")
+    f_vapi.write("}\n\n")
+    f_vapi.flush()
 
 def generate_vapi_from_xml(protocol_file, output_vapi_file, cheader_filename):
     try:
@@ -104,7 +188,8 @@ def generate_vapi_from_xml(protocol_file, output_vapi_file, cheader_filename):
                 free_function = f"{interface_name_snake}_destroy"
                 for request in interface.findall("request"):
                     if (
-                        request.get("destroyer") == "true"
+                        request.get("type") == "destructor"
+                        or request.get("destroyer") == "true"
                         or request.get("name") == "destroy"
                     ):
                         free_function = f"{interface_name_snake}_{request.get('name')}"
@@ -158,71 +243,6 @@ def generate_vapi_from_xml(protocol_file, output_vapi_file, cheader_filename):
         print(f"Error parsing XML: {e}")
     except Exception as e:
         print(f"An error occurred: {e}")
-
-
-def generate_requests(f_vapi, interface_name_snake, interface_name_vala, requests):
-    for request in requests:
-        request_name_snake = request.get("name")
-        generate_docs(request, f_vapi, True)
-
-        return_type, params_str = generate_parameters(
-            request.findall("arg"), interface_name_snake
-        )
-
-        if request.get("destroyer") == "true" or request_name_snake == "destroy":
-            f_vapi.write("  [DestroysInstance]\n")
-
-        f_vapi.write(f"  public {return_type} {request_name_snake}({params_str});\n")
-
-
-def generate_events(f_vapi, interface_name_snake, interface_name_vala, events):
-    f_vapi.write(
-        f'[CCode (cname="struct {interface_name_snake}_listener", has_type_id=false)]\n'
-    )
-    f_vapi.write(f"public struct {interface_name_vala}Listener {{\n")
-    for event in events:
-        name_snake = event.get("name")
-        f_vapi.write(
-            f"  public {interface_name_vala}Listener{snake_to_pascal(name_snake)} {snake_to_camel(name_snake)};\n"
-        )
-    f_vapi.write("}\n\n")
-
-    for event in events:
-        event_name_vala = snake_to_pascal(event.get("name"))
-        generate_docs(event, f_vapi)
-        return_type, params_str = generate_parameters(
-            event.findall("arg"), interface_name_snake, False
-        )
-        f_vapi.write("[CCode (has_target=false, has_typedef=false)]\n")
-        f_vapi.write(
-            f"public delegate void {interface_name_vala}Listener{event_name_vala}(void *data, {interface_name_vala} {interface_name_snake}"
-            f"{', ' + params_str if params_str else ''});\n\n"
-        )
-
-
-def generate_enum(
-    f_vapi, enum, interface_name_snake, interface_name_vala, cheader_filename
-):
-    enum_name_snake = enum.get("name")
-    enum_name_vala = snake_to_pascal(enum_name_snake)
-    generate_docs(enum, f_vapi, False)
-
-    f_vapi.write(
-        f'[CCode (cprefix="{snake_to_screaming_snake(interface_name_snake)}_{snake_to_screaming_snake(enum_name_snake)}_", '
-        f'cname="enum {interface_name_snake}_{enum_name_snake}", cheader_filename="{cheader_filename}")]'
-        "\n"
-    )
-    if enum.get("bitfield") == "true":
-        f_vapi.write("[Flags]\n")
-
-    f_vapi.write(f"public enum {interface_name_vala}{enum_name_vala} {{\n")
-    for entry in enum.findall("entry"):
-        enum_value_vala = snake_to_screaming_snake(entry.get("name"))
-        generate_docs(entry, f_vapi, True)
-        f_vapi.write(f"  {enum_value_vala},\n")
-    f_vapi.write("}\n\n")
-    f_vapi.flush()
-
 
 def main():
     parser = argparse.ArgumentParser(
