@@ -128,7 +128,7 @@ def generate_events(f_vapi, interface_name_snake, interface_name_vala, events):
     for event in events:
         name_snake = event.get("name")
         f_vapi.write(
-            f"  public {interface_name_vala}Listener{snake_to_pascal(name_snake)} {snake_to_camel(name_snake)};\n"
+            f"  public {interface_name_vala}Listener{snake_to_pascal(name_snake)} {name_snake};\n"
         )
     f_vapi.write("}\n\n")
 
