@@ -251,6 +251,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Generate VAPI files from Wayland protocol XML."
     )
+    parser.add_argument('--version', action='version', version=f'%(prog)s {VERSION}')
     parser.add_argument(
         "--protocol", required=True, help="Path to the Wayland protocol XML file."
     )
