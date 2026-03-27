@@ -92,10 +92,13 @@ def generate_parameters(args, interface_name, return_new_id=True):
         arg_type = arg.get("type")
         arg_interface = arg.get("interface")
         arg_enum = arg.get("enum")
+        arg_allow_null = arg.get("allow-null")
 
         vala_type = map_vala_type(
             arg_type, interface_name, interface_attr=arg_interface, enum_attr=arg_enum
         )
+        if arg_allow_null == "true":
+            vala_type = f"{vala_type}?"
         if arg_type == "new_id" and return_new_id:
             return_type = vala_type
         else:
