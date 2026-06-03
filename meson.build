@@ -1,46 +1,49 @@
-project('wl-vapi-gen',
-  version: '1.1.0',
+project('wl-vapi-gen', ['c', 'vala'],
+    version: '2.0.0',
 )
 
-prefix = get_option('prefix')
-datadir = join_paths(prefix, get_option('datadir'))
+version = meson.project_version()
+version_split = version.split('.')
 
-py = import('python').find_installation('python3')
-
-# configure_file(
-#   input: 'wl-vapi-gen.pc.in',
-#   output: 'wl-vapi-gen.pc',
-#   configuration: { 'VERSION': meson.project_version() },
-#   install: not meson.is_subproject(),
-#   install_dir: join_paths(datadir, 'pkgconfig'),
-# )
-
-config = configuration_data({
-  'VERSION': meson.project_version(),
-  'PROG_NAME': meson.project_name(),
-})
-
-wl_vapi_gen_dep = declare_dependency()
-wl_vapi_gen = configure_file(
-  input: 'wl-vapi-gen.py',
-  output: 'wl-vapi-gen',
-  configuration: config,
-  install: not meson.is_subproject(),
-  install_dir: get_option('bindir'),
+config = configure_file(
+  input: 'src/config.vala.in',
+  output: 'config.vala',
+  configuration: {
+    'VERSION': version,
+    'MAJOR_VERSION': version_split[0],
+    'MINOR_VERSION': version_split[1],
+    'MICRO_VERSION': version_split[2],
+  },
 )
 
+sources = [config] + [
+  'src/protocol.vala',
+  'src/utils.vala'
+]
 
-pkgconf = configuration_data()
-pkgconf.set('VERSION', meson.project_version())
-configure_file(
-  input: 'wl-vapi-gen.pc.in',
-  output: 'wl-vapi-gen.pc',
-  configuration: pkgconf,
-  install: not meson.is_subproject(),
-  install_dir: get_option('datadir') / 'pkgconfig',
+deps = [
+    dependency('libxml-2.0'),
+    dependency('glib-2.0'),
+    dependency('gobject-2.0'),
+    dependency('gio-2.0'),
+    dependency('gee-0.8')
+]
+
+wl_vapi_gen = executable('wl-vapi-gen',
+    'src/wl-vapi-gen.vala',
+    sources,
+    dependencies: deps,
+    install: true,
+)
+wl_vala_gen = executable('wl-vala-gen',
+    'src/wl-vala-gen.vala',
+    sources,
+    dependencies: deps,
+    install: true,
 )
 
 if meson.is_subproject()
   meson.override_find_program('wl-vapi-gen', wl_vapi_gen)
+  meson.override_find_program('wl-vala-gen', wl_vala_gen)
 endif
 
